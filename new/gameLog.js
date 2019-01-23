@@ -3,6 +3,7 @@ class GameLog{
         this.role = role;
         this.gameId = gameId;
         this.lane  = lane;
+        this.participant_id; 
     }
 
 }

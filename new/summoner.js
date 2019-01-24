@@ -6,7 +6,7 @@ class Summoner{
         this.id = id;
         this.accID = accID;
         this.Games = new Array(); 
-        
+        this.finished = 0;
     }
 }
 

@@ -4,6 +4,7 @@ class GameLog{
         this.gameId = gameId;
         this.lane  = lane;
         this.participant_id; 
+        this.wards_placed;
     }
 
 }

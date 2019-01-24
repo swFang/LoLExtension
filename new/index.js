@@ -6,7 +6,8 @@ const Summoner = require("./summoner");
 const GameLog = require("./gameLog");
 const request = require("request");
 //const summoner = require('./summoner')
-var summoners = new Array();
+var queue = require("queue");
+var waitUntil = require("wait-until");
 
 var strGetbyName =
   "https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-name/";
@@ -16,31 +17,31 @@ var get_match_details = "https://na1.api.riotgames.com/lol/match/v4/matches/";
 API = "RGAPI-5c55a3f8-43fb-4729-935e-6655b6b40fde";
 
 app.get("/:name", (req, res) => {
+  console.log("hit api");
   let name = req.params.name;
   var jsonURL = strGetbyName + name + "?api_key=" + API;
-  console.log("hit api");
-  //var result;
-  get_data_API(jsonURL, parseNameData);
+  get_data_API(jsonURL, create_Sum);
 });
 
 function get_data_API(val, cb) {
   https.get(val, res => {
+    let data = "";
     res.setEncoding("utf8");
     res.on("data", function(chunk) {
-      //console.log("from new cb fn " + chunk);
-      tempUser = JSON.parse(chunk);
-      summoners.push(tempUser);
-      return cb(JSON.parse(chunk));
+      data += chunk;
+    });
+
+    res.on("end", function() {
+      return cb(JSON.parse(data));
     });
   });
 }
 
 function get_large_data(val, cb) {
   https.get(val, res => {
-    var body = "";
+    let body = "";
     res.setEncoding("utf8");
     res.on("data", function(chunk) {
-      //console.log("from new cb fn " + chunk);
       body += chunk;
     });
     res.on("end", function() {
@@ -49,65 +50,78 @@ function get_large_data(val, cb) {
   });
 }
 
-function parse_games(summoner) {
+function match_ids(person, dat) {
+  participant_info = dat["participantIdentities"];
+  for (var i = 0; i < participant_info.length; i++) {
+    if (
+      participant_info[i]["player"]["summonerId"] == person.id &&
+      participant_info[i]["player"]["summonerName"] == person.name
+    ) {
+      for (var k = 0; k < person.Games.length; k++) {
+        if (dat["gameId"] == person.Games[k].gameId) {
+          person.Games[k].participant_id = participant_info[i]["participantId"];
+          var temp = dat["participants"];
+          person.Games[k].wards_placed = temp[i]["stats"]["wardsPlaced"];
+        }
+      }
+    }
+  }
+  //console.log(person.Games);
+}
+
+function parse_games(summoner, cb) {
   for (var i = 0; i < summoner.Games.length; i++) {
     var API_call =
       get_match_details + summoner.Games[i].gameId + "?api_key=" + API;
-    var cur_idx = 0;
     get_large_data(API_call, data => {
-      //console.log(data);
-      var participants = data["participantIdentities"]; 
-      for( var i = 0 ; i<participants.length; i++ ){
-        //console.log(participants[i]['player']['summonerName']);
-        if(participants[i]['player']['summonerName'] == summoner.name) {
-          //console.log(participants[i]['player']['summonerName']);
-          //console.log(participants[i]['participantId']); 
-          summoner.Games[cur_idx].participant_id = participants[i]['participantId'];
-          console.log(cur_idx);
-          console.log(summoner.Games[cur_idx]);
-          cur_idx ++;
-        }
-      }
+      match_ids(summoner, data, print_games);
+      console.log("inside " + summoner.Games);
     });
   }
+  //console.log(summoner.Games);
 }
 
-function parseNameData(data) {
-  //res.send(data);
-  //console.log("array is now " + JSON.stringify(data));
-  //var json = JSON.stringify(data);
-  var id = data["id"];
-  var name = data["name"];
-  var accID = data["accountId"];
-  //console.log("json id is " + id);
-  var newSummoner = new Summoner(name, id, accID);
-  //console.log("name and id " + newSummoner.name + " " + newSummoner.id + "accId " + newSummoner.accID);
-  /*  var i;
-    for (i = 0; i<summoners.length; i++){
-        console.log("number " + i + " name is " + summoners[i].name + " sumid is " + summoners[i].accID);
-    } */
-
+function get_game_info(summoner) {
   var put_to =
-    get_three_matches + newSummoner.accID + "?endIndex=3" + "&api_key=" + API;
-  //console.log(put_to);
+    get_three_matches + summoner.accID + "?endIndex=3" + "&api_key=" + API;
 
   get_data_API(put_to, data => {
     var matches = data["matches"];
     for (var i = 0; i < matches.length; i++) {
       cur_match = matches[i];
       var cur_lane = cur_match["lane"];
-      //console.log(cur_lane);
       var cur_gameid = cur_match["gameId"];
-      //console.log(cur_gameid);
       var cur_role = cur_match["role"];
-      //console.log(cur_role);
       new_game = new GameLog(cur_lane, cur_gameid, cur_role);
-      newSummoner.Games[i] = new_game;
-      console.log(newSummoner.Games[i]);
+      summoner.Games[i] = new_game;
     }
-    parse_games(newSummoner);
-    //console.log('summoner games = \n', newSummoner.Games);
+    parse_games(summoner, print_games);
   });
+}
+
+function create_Sum(data) {
+  var id = data["id"];
+  var name = data["name"];
+  var accID = data["accountId"];
+  var newSummoner = new Summoner(name, id, accID);
+
+  get_game_info(newSummoner);
+
+  waitUntil()
+    .interval(500)
+    .times(10)
+    .condition(function() {
+      return (newSummoner.finished == 1) ? true : false;
+    })
+    .done(function(result) {
+      // do stuff
+      print_games(newSummoner);
+    });
+}
+
+function print_games(summoner) {
+  console.log(summoner.Games.length);
+  console.log(summoner.Games);
 }
 
 const port = process.env.PORT || 3000;
